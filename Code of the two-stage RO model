@@ -1,0 +1,73 @@
+using JuMP, BilevelJuMP, Gurobi, CSV, DataFrames, LinearAlgebra
+@time begin
+
+include("D:\\u=0.64σ=0.2\\knn.jl") 
+knnn()
+
+include("D:\\u=0.64σ=0.2\\qujian.jl") 
+qujian()
+
+include("D:\\ u=0.64σ=0.2\\Two_stage_opf_rd.jl")
+rd()
+
+k=1
+n=14
+C1=ones(n,n)
+
+global Pw_hat=u[1]
+global PL=data[k,1:14]
+global QL=data[k,16:29]
+
+## solving model 
+model=Model(Gurobi.Optimizer)
+set_optimizer_attribute(model,"NonConvex",2)
+## Create variables                                                            
+@variable(model, P[1:n])
+@variable(model, Q[1:n])
+@variable(model, C[1:n,1:n])
+@variable(model, S[1:n,1:n])
+@variable(model, Pw)#wind power
+## Objective function
+f=@expression(model,pe1[k]*P[1] + be[k]*P[2]+ae[k])
+@objective(model,Min,f)
+
+## Constraints
+@expression(model, my_expr1[i=1:n,j=1:n], G[i,j]*C[i,j]-B[i,j]*S[i,j])
+@expression(model, my_expr2[i=1:n],sum(my_expr1[i,j] for j in 1:n)) 
+@expression(model, my_expr3[i=1:n], P[i]-PL[i])
+@constraint(model, con1[i=1:n], my_expr3[i]== my_expr2[i])                      #(Pg-Pd) == sum(G.*C-B.*S,2)
+#
+@expression(model, my_expr4[i=1:n,j=1:n], -B[i,j]*C[i,j]-G[i,j]*S[i,j])
+@expression(model, my_expr5[i=1:n],sum(my_expr4[i,j] for j in 1:n)) 
+@expression(model, my_expr6[i=1:n],Q[i]-QL[i])
+@constraint(model, con2[i=1:n], my_expr6[i]== my_expr5[i])                      #(Qg-Qd) == sum(-B.*C-G.*S,2)
+#
+@expression(model, my_expr7[i=1:n],C[i,i])
+@constraint(model,con3[i=1:n],0.81*ones(n,1)[i]<=my_expr7[i]<=1.21*ones(n,1)[i])#0.81*ones(n,1)<=diag(C)<=1.21*ones(n,1)               
+
+@constraint(model, con4[i=1:n,j=1:n], C[i,j]==C[j,i])                           #C==C'
+@constraint(model, con5[i=1:n,j=1:n], S[i,j]==-S[j,i])                          #S==-S'
+
+@expression(model, my_expr8[i=1:n,j=1:n], C[i,j]*C[i,j]+S[i,j]*S[i,j])          #C.^2+S.^2
+@expression(model, my_expr9,diagm(diag(C)))
+@expression(model, my_expr10,my_expr9*(C1*my_expr9))
+@constraint(model, con6[i=1:n,j=1:n], my_expr8[i,j]<=my_expr10[i,j])            #C.^2+S.^2<=diag(diag(C))*(ones(n,n)*diag(diag(C)))
+
+@constraint(model,con7[i=1:n],Pmin[i]<=P[i]<=Pmax[i])                           #Pmin<=Pg<=Pmax
+
+@constraint(model,con8[i=1:n],Qmin[i]<=Q[i]<=Qmax[i])                           #Qmin<=Qg<=Qmax
+
+@constraint(model,con201, P[1]+P[2]+Pw==sum(PL))                                #wind turbines lies in bus6 in IEEE14
+
+optimize!(model)
+end
+## Outputs
+global P=JuMP.value.(P)
+global dC=diag(JuMP.value.(C))
+global Pw=JuMP.value.(Pw)
+global cost1=pe1[k]*P[1] + be[k]*P[2]+ae[k]
+global cost2=0.536*abs(Pw_hat-P[6])
+
+println("P = ", P)
+println("u_lower=",mean(u_lower))
+println("u_upper2=",mean(u_upper2))
