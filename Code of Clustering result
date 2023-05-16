@@ -1,0 +1,16 @@
+using CSV, DataFrames, Distributions, StatsBase, Clustering, DataFrames, MultivariateStats, Plots, Distances, StatsBase, UMAP, Clustering, MultivariateStats, ParallelKMeans
+data=DataFrame(CSV.File("D:\\u=0.64σ=0.2\\wind power data.CSV")) 
+data=Array(data)
+global f=size(data,2) 
+   n=size(data,1)
+## normalization
+   dt=fit(UnitRangeTransform,data, dims=1)
+   DT=StatsBase.transform(dt,data)
+## EK-means++
+ ParallelKMeans.smart_init(DT',3; init="k-means++")
+ result=ParallelKMeans.kmeans(Elkan(),DT',3)
+ juleitu=Plots.scatter(DT[:,1],DT[:,2],color=result.assignments,xlabel="First principal feature",ylabel="Second principal feature",label=false,title="cluster")
+  scatter!([result.centers[1,1]],[result.centers[2,1]],color=[1],label="Scenario1")
+  scatter!([result.centers[1,2]],[result.centers[2,2]],color=[2],label="Scenario2")
+  scatter!([result.centers[1,3]],[result.centers[2,3]],color=[3],label="Scenario3")
+  savefig(juleitu,"D:\\u=0.64σ=0.2\\Clustering result.png")
